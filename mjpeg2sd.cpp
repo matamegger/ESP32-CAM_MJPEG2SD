@@ -133,6 +133,8 @@ void prepSound();
 void startAudio();
 void finishAudio(const char* mjpegName, bool isvalid);
 bool useMicrophone();
+void createScheduledUploadTask(const char* val);
+
 
 // auto newline printf
 #define showInfo(format, ...) Serial.printf(format "\n", ##__VA_ARGS__)
@@ -351,6 +353,7 @@ static bool closeMjpeg() {
     insufficient = 0;
 
     // MJPEG stats
+    createScheduledUploadTask(mjpegName);
     showInfo("\n******** MJPEG recording stats ********");
     showInfo("Recorded %s", mjpegName);
     showInfo("MJPEG duration: %0.1f secs", (float)vidDuration / 1000.0); 

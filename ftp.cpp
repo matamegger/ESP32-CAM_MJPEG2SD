@@ -250,23 +250,23 @@ bool ftpStoreFile(String file, File &fh){
 }
 
 //Upload a single file or whole directory to ftp 
-void uploadFolderOrFileFtp(String sdName, const bool removeAfterUpload, uint8_t levels){
+bool uploadFolderOrFileFtp(String sdName, const bool removeAfterUpload, uint8_t levels){
   ESP_LOGI(TAG, "Ftp upload name: %s", sdName.c_str());
   if(sdName=="" || sdName=="/"){
      ESP_LOGE(TAG, "Root or null is not allowed %s",sdName.c_str());  
-      return;  
+      return true;  
   }
   String ftpName = "";
   //Ftp connect
   if(!ftpConnect()){
-    return; 
+    return false; 
   }
 
   root = SD_MMC.open(sdName);
   if (!root) {
       ESP_LOGE(TAG, "Failed to open: %s", sdName.c_str());
       ftpDisconnect();
-      return;
+      return false;
   }  
     
   if (!root.isDirectory()) { //Upload a single file
@@ -275,12 +275,12 @@ void uploadFolderOrFileFtp(String sdName, const bool removeAfterUpload, uint8_t 
       if(!ftpCheckDirPath(sdName, ftpName)){
           ESP_LOGE(TAG, "Create ftp dir path %s failed", sdName.c_str());
           ftpDisconnect();
-          return;
+          return false;
       }
       if(!ftpStoreFile(ftpName, root)){
         ESP_LOGE(TAG, "Store file %s to ftp failed", ftpName.c_str());
         ftpDisconnect();
-        return;
+        return false;
       }
       root.close();
       ESP_LOGV(TAG, "File closed");
@@ -297,7 +297,7 @@ void uploadFolderOrFileFtp(String sdName, const bool removeAfterUpload, uint8_t 
       if(!ftpCheckDirPath(sdName, ftpName)){
           ESP_LOGE(TAG, "Create ftp dir path %s failed", sdName.c_str());
           ftpDisconnect();
-          return;
+          return false;
       }
           
       bool bUploadOK=false;
@@ -333,7 +333,8 @@ void uploadFolderOrFileFtp(String sdName, const bool removeAfterUpload, uint8_t 
        }
   }
   //Disconnect from ftp
-  ftpDisconnect();  
+  ftpDisconnect(); 
+  return true; 
 }
 
 static bool removeAfterUpload=false; //Delete file if successfully uploaded
@@ -346,6 +347,37 @@ static void taskUpload(void * parameter){
     uploadFolderOrFileFtp(fname, removeAfterUpload, 0);
     ESP_LOGV(TAG, "Ending uploadTask");
     vTaskDelete( NULL );
+}
+
+static void taskScheduledUpload(void * parameter) {
+  // prevent SD access by other tasks
+    String fname((char*) parameter);
+    delay(1000); // allow other tasks to finish off
+    
+    for(;;) {
+      ESP_LOGV(TAG, "Entering upload task with param: %s\n",fname.c_str());    
+      if(uploadFolderOrFileFtp(fname,true,0)) {
+        ESP_LOGV(TAG, "Upload completed");
+        break;
+      }else {
+        vTaskDelay(1*60*60*1000 / portTICK_PERIOD_MS);
+      }
+    }
+    ESP_LOGV(TAG, "Ending uploadTask");
+    vTaskDelete( NULL );
+}
+
+void createScheduledUploadTask(const char* val) {
+   static char fname[100];
+    strcpy(fname, val); // else wont persist
+    ESP_LOGV(TAG, "Starting upload task with val: %s\n",val);
+    xTaskCreate(
+        &taskScheduledUpload,       /* Task function. */
+        "scheduledTaskUpload",     /* String with name of task. */
+        4096*2,           /* Stack size in bytes. */
+        (void *)fname,      /* Parameter passed as input of the task */
+        1,                /* Priority of the task. */
+        NULL);            /* Task handle. */
 }
 
 void createUploadTask(const char* val, bool move=false){
